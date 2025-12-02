@@ -35,26 +35,29 @@ const saveUploadedFile = (originalname, buffer) => {
     return { filename, path: filePath };
 };
 
+
 // Process uploaded file comprehensively
 const processUploadedFile = async (file) => {
     validateFile(file);
 
     const { buffer, originalname } = file;
-
-    // Extract text from PDF
     const rawText = await extractTextFromPDF(buffer);
     const cleanedText = cleanText(rawText);
     const wordCount = calculateWordCount(cleanedText);
 
     // Save file to storage
     const savedFile = saveUploadedFile(originalname, buffer);
-
-    return {
+    const result = {
         rawText,
         cleanedText,
         wordCount,
-        savedFile
+        savedFile,
     };
+
+    // 🔥 Step 3: Store result in Redis
+
+
+    return result;
 };
 
 module.exports = {

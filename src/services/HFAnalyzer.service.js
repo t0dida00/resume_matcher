@@ -22,10 +22,7 @@ const analyzeCVWithAI = async (cleanedText) => {
     messages: [{ role: "user", content: prompt }],
   });
 
-  console.log('Hugging Face Analysis Completed:', {
-    model: CHAT_MODEL,
-    messageLength: chatCompletion.choices[0].message.content.length
-  });
+
 
   return JSON.parse(chatCompletion.choices[0].message.content);
 };
