@@ -6,11 +6,11 @@ async function JobAnalyzerService(jobDescription) {
 
     let cached = await getCache("job", hash);
     if (cached) {
-        console.log("📌 JOB CACHE HIT");
+        console.log("📦 JOB CACHE HIT");
         return cached;
     }
 
-    console.log("📌 JOB CACHE MISS — analyzing job...");
+    console.log("🔄 JOB CACHE MISS — analyzing job...");
 
     const analysis = await AIAnalyzer("job", jobDescription);
 
@@ -19,7 +19,7 @@ async function JobAnalyzerService(jobDescription) {
     };
 
     await saveCache("job", hash, result);
-    console.log("📌 Analyzed job description and cached result");
+    console.log("✅ Analyzed job description and cached result");
     return result;
 }
 module.exports = JobAnalyzerService;

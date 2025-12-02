@@ -7,11 +7,11 @@ async function CVAnalyzerService(file) {
 
     let cached = await getCache("cv", hash);
     if (cached) {
-        console.log("📌 CV CACHE HIT");
+        console.log("📦 CV CACHE HIT");
         return cached;
     }
 
-    console.log("📌 CV CACHE MISS — processing CV...");
+    console.log("🔄 CV CACHE MISS — processing CV...");
     const processedCV = await processUploadedFile(file);
     const analysis = await AIAnalyzer("cv", processedCV.cleanedText);
 
@@ -21,7 +21,7 @@ async function CVAnalyzerService(file) {
     };
 
     await saveCache("cv", hash, result);
-    console.log("📌 Analyzed CV and cached result");
+    console.log("✅ Analyzed CV and cached result");
     return result;
 }
 module.exports = CVAnalyzerService;
