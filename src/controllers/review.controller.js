@@ -1,4 +1,4 @@
-const { analyzeCVWithAI, checkHFServiceHealth } = require("../services/HFAnalyzer.service");
+const { AIAnalyzer, checkHFServiceHealth } = require("../services/HFAnalyzer.service");
 const { processUploadedFile } = require("../services/fileProcessor.service");
 const { parseAnalysisOptions } = require("../utils/queryParser");
 const { createSuccessResponse, createErrorResponse } = require("../utils/errorHandler");
@@ -7,69 +7,73 @@ const redis = require("../clients/redis.client"); // <-- Add Redis client
 // Main controller function
 async function reviewCV(req, res, next) {
     try {
-        const { file, query } = req;
+        const { file } = req;
+        const { jobDescription } = req.body;
+
         if (!file) {
             const errorResponse = createErrorResponse("NO_FILE_UPLOADED");
             return res.status(errorResponse.status).json(errorResponse);
         }
-        // STEP 1 — Compute hash FIRST
-        const hash = hashBuffer(file.buffer);
-
-        // STEP 2 — Check Redis cache BEFORE ANY PROCESSING
-        const cached = await getCachedResult(hash);
-        if (cached) {
-            console.log("📌 FULL CACHE HIT");
-            const successResponse = createSuccessResponse(cached);
-            return res.status(successResponse.status).json(successResponse);
+        if (!jobDescription) {
+            const errorResponse = createErrorResponse("INVALID_REQUEST", "jobDescription is required");
+            return res.status(errorResponse.status).json(errorResponse);
         }
 
-        console.log("📌 CACHE MISS — Processing file...");
-        // Process uploaded file
-        const fileProcessingResult = await processUploadedFile(file);
-        const { cleanedText, wordCount, savedFile } = fileProcessingResult;
+        // STEP 1 — Compute hashes
+        const CVHash = hashBuffer(file.buffer);
+        const JobHash = hashBuffer(Buffer.from(jobDescription));
 
-        // Parse query options
-        const analysisOptions = parseAnalysisOptions(query);
+        // STEP 2 — Check Redis for CV + Job cache
+        let CVcached = await getCachedResult("cv", CVHash);
+        let Jobcached = await getCachedResult("job", JobHash);
 
-        // Analyze CV with AI
-        const analysisResult = await analyzeCVWithAI(cleanedText);
+        console.log("CV cache?", !!CVcached);
+        console.log("Job cache?", !!Jobcached);
 
-        // Calculate ATS score if requested
-        let atsScore = null;
-        if (analysisOptions.includeATS && analysisOptions.keywords.length > 0) {
-            // const ats = scoreATS(cleanedText, { jobKeywords: analysisOptions.keywords });
-            // atsScore = ats; // Uncomment when ATS service is ready
-        }
+        // STEP 3 — Process CV if not cached
+        if (!CVcached) {
+            console.log("📌 CV CACHE MISS — processing CV...");
+            const processedCV = await processUploadedFile(file);
 
-        // Prepare response data
-        const responseData = {
-            words: wordCount,
-            result: analysisResult,
-        };
+            // Run AI on CV text
+            const CVanalysis = await AIAnalyzer("cv", processedCV.cleanedText);
 
-        // Add ATS score if available
-        if (atsScore) {
-            responseData.ats = atsScore;
-        }
-
-        // Add detailed analysis if requested
-        if (analysisOptions.detailed) {
-            responseData.detailed = {
-                jobKeywords: analysisOptions.keywords,
-                analysisTimestamp: new Date().toISOString()
+            CVcached = {
+                words: processedCV.wordCount,
+                result: CVanalysis
             };
+
+            await cacheResult("cv", CVHash, CVcached);
         }
 
-        // STEP 7 — Save full result to Redis
-        await cacheResult(hash, responseData);
-        // Return success response
-        const successResponse = createSuccessResponse(responseData);
+        // STEP 4 — Process Job if not cached
+        if (!Jobcached) {
+            console.log("📌 JOB CACHE MISS — processing job description...");
+
+            // Run AI on job description
+            const jobAnalysis = await AIAnalyzer("job", jobDescription);
+
+            Jobcached = {
+                result: jobAnalysis
+            };
+
+            await cacheResult("job", JobHash, Jobcached);
+        }
+
+        // STEP 5 — Return both separately
+        const successResponse = createSuccessResponse({
+            cv: CVcached,
+            job: Jobcached
+        });
+
         return res.status(successResponse.status).json(successResponse);
 
     } catch (error) {
-        handleCVReviewError(error, res, next);
+        next(error);
     }
 }
+
+module.exports = { reviewCV };
 
 // Error handling function
 function handleCVReviewError(error, res, next) {
@@ -122,14 +126,14 @@ const hashBuffer = (buffer) => {
 };
 
 // Check cache before doing heavy work
-const getCachedResult = async (hash) => {
-    const cached = await redis.get(`cv:${hash}`);
+const getCachedResult = async (key = "cv", hash) => {
+    const cached = await redis.get(`${key}:${hash}`);
     return cached ? JSON.parse(cached) : null;
 };
 
 // Save result to Redis
-const cacheResult = async (hash, result) => {
-    await redis.set(`cv:${hash}`, JSON.stringify(result), "EX", 86400);
+const cacheResult = async (key = "cv", hash, result) => {
+    await redis.set(`${key}:${hash}`, JSON.stringify(result), "EX", 86400);
     // Cache for 1 day
 };
 module.exports = {

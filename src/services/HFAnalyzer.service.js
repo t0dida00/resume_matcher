@@ -1,6 +1,7 @@
 const { InferenceClient } = require("@huggingface/inference");
 const { hfToken, hfModel } = require("../config/env");
 const { buildRecruiterPrompt } = require("../prompts/recruiterExtractor.prompt");
+const { buildJobPrompt } = require("../prompts/jobExtractor.prompt");
 // Configuration
 const CHAT_MODEL = hfModel;
 
@@ -12,10 +13,15 @@ const validateHuggingFaceToken = (token) => {
 };
 
 
-const analyzeCVWithAI = async (cleanedText) => {
+const AIAnalyzer = async (key = "cv", cleanedText) => {
   validateHuggingFaceToken(hfToken);
   const hfClient = new InferenceClient(hfToken);
-  const prompt = buildRecruiterPrompt(cleanedText);
+  let prompt = '';
+  if (key === 'cv') {
+    prompt = buildRecruiterPrompt(cleanedText);
+  } else {
+    prompt = buildJobPrompt(cleanedText);
+  }
 
   const chatCompletion = await hfClient.chatCompletion({
     model: CHAT_MODEL,
@@ -66,7 +72,7 @@ const checkHFServiceHealth = async () => {
 };
 
 module.exports = {
-  analyzeCVWithAI,
+  AIAnalyzer,
   // analyzeCVWithCustomModel,
   checkHFServiceHealth,
   validateHuggingFaceToken
