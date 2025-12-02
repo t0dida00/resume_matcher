@@ -4,68 +4,23 @@ const { parseAnalysisOptions } = require("../utils/queryParser");
 const { createSuccessResponse, createErrorResponse } = require("../utils/errorHandler");
 const crypto = require("crypto");
 const redis = require("../clients/redis.client"); // <-- Add Redis client
+const CVAnalyzerService = require("../services/CVAnalyzer.service");
 // Main controller function
+const JobAnalyzerService = require("../services/JobAnalyzer.service");
 async function reviewCV(req, res, next) {
     try {
         const { file } = req;
         const { jobDescription } = req.body;
 
-        if (!file) {
-            const errorResponse = createErrorResponse("NO_FILE_UPLOADED");
-            return res.status(errorResponse.status).json(errorResponse);
-        }
-        if (!jobDescription) {
-            const errorResponse = createErrorResponse("INVALID_REQUEST", "jobDescription is required");
-            return res.status(errorResponse.status).json(errorResponse);
-        }
+        if (!file)
+            return res.status(400).json(createErrorResponse("NO_FILE_UPLOADED"));
+        if (!jobDescription)
+            return res.status(400).json(createErrorResponse("INVALID_REQUEST", "jobDescription required"));
 
-        // STEP 1 — Compute hashes
-        const CVHash = hashBuffer(file.buffer);
-        const JobHash = hashBuffer(Buffer.from(jobDescription));
+        const cv = await CVAnalyzerService(file);
+        const job = await JobAnalyzerService(jobDescription);
 
-        // STEP 2 — Check Redis for CV + Job cache
-        let CVcached = await getCachedResult("cv", CVHash);
-        let Jobcached = await getCachedResult("job", JobHash);
-
-        console.log("CV cache?", !!CVcached);
-        console.log("Job cache?", !!Jobcached);
-
-        // STEP 3 — Process CV if not cached
-        if (!CVcached) {
-            console.log("📌 CV CACHE MISS — processing CV...");
-            const processedCV = await processUploadedFile(file);
-
-            // Run AI on CV text
-            const CVanalysis = await AIAnalyzer("cv", processedCV.cleanedText);
-
-            CVcached = {
-                words: processedCV.wordCount,
-                result: CVanalysis
-            };
-
-            await cacheResult("cv", CVHash, CVcached);
-        }
-
-        // STEP 4 — Process Job if not cached
-        if (!Jobcached) {
-            console.log("📌 JOB CACHE MISS — processing job description...");
-
-            // Run AI on job description
-            const jobAnalysis = await AIAnalyzer("job", jobDescription);
-
-            Jobcached = {
-                result: jobAnalysis
-            };
-
-            await cacheResult("job", JobHash, Jobcached);
-        }
-
-        // STEP 5 — Return both separately
-        const successResponse = createSuccessResponse({
-            cv: CVcached,
-            job: Jobcached
-        });
-
+        const successResponse = createSuccessResponse({ cv, job });
         return res.status(successResponse.status).json(successResponse);
 
     } catch (error) {
